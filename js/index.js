@@ -43,8 +43,11 @@ const getTempInfo = (waterTempData) => {
 
 function getWaterTempInfo(waterTemp) {
     let result = null;
-    if (waterTemp <= 45.0) {
-        result = 'The water temperature is super duper cold!';
+    if (waterTemp <= 32.0) {
+        result = 'The water is actually ice, so good luck with that.';
+    }
+    if (32.0 < waterTemp && waterTemp <= 45.0) {
+        result = 'The water temperature is freezing cold!';
     }
     if (45.0 < waterTemp && waterTemp <= 50.0) {
         result = 'The water temperature is extremely cold!';
@@ -107,8 +110,11 @@ function getDischargeInfo(discharge) {
 
 function getGageInfo(gage) {
     let result = null;
-    if (gage <= 1.5) {
+    if (gage <= 0.5) {
         result ='It\'s bone dry and not possible to kayak.';
+    }
+    if (0.5 < gage && gage <= 1.5) {
+        result = 'You\'ll have to portage a lot.';
     }
     if (1.5 < gage && gage <= 1.9) {
         result = 'You\'ll probaby have to portage some.';
