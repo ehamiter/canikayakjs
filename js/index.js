@@ -1,5 +1,10 @@
 const main = document.getElementById('main');
-main.innerHTML = '<p>Loading...</p>';
+const spinnerText = `
+<div class="spinner-border spinner-border-sm mr-1 text-light" role="status">
+  <span class="sr-only">Fetching data from waterservices.usgs.gov...</span>
+</div>
+`
+main.innerHTML = `<p>${spinnerText} Fetching data from waterservices.usgs.gov...</p>`;
 
 const queryString = window.location.search;
 const urlParams = new URLSearchParams(queryString);
