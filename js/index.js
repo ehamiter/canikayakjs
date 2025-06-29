@@ -1,157 +1,174 @@
 document.addEventListener('DOMContentLoaded', (event) => {
     const main = document.getElementById('main');
+    const temp = document.getElementById('temp');
+
     const spinnerText = `
-    <div class="spinner-border spinner-border-sm mr-1 text-light" role="status">
-      <span class="sr-only">Fetching data from waterservices.usgs.gov...</span>
-    </div>
-    `
-    main.innerHTML = `<p>${spinnerText} Fetching data from waterservices.usgs.gov...</p>`;
+        <div class="spinner-border spinner-border-sm mr-1 text-light" role="status">
+            <span class="sr-only">Fetching data from waterservices.usgs.gov...</span>
+        </div>
+    `;
 
-    const queryString = window.location.search;
-    const urlParams = new URLSearchParams(queryString);
-    const url = 'https://waterservices.usgs.gov/nwis/dv/?format=json&sites=03433500&parameterCd=00060,00065&siteStatus=all';
-    const waterTempUrl = 'https://waterservices.usgs.gov/nwis/iv/?format=json&sites=034324146&parameterCd=00010&siteStatus=all';
+    main.innerHTML = `<p>${spinnerText} Fetching real-time data from waterservices.usgs.gov...</p>`;
+    if (temp) temp.innerHTML = `<p>${spinnerText} Loading temperature data...</p>`;
 
-    fetch(url)
-        .then((response) => response.json())
-        .then((data) => main.innerHTML = getRiverInfo(data));
+    const url = 'https://waterservices.usgs.gov/nwis/iv/?format=json&site=03433500&siteStatus=all';
 
-    fetch(waterTempUrl)
-        .then((response) => response.json())
-        .then((waterTempData) => temp.innerHTML = getTempInfo(waterTempData));
+    fetch(url, {
+        headers: {
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept': 'application/json',
+            'User-Agent': 'CanIKayak-Web/1.0'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        const riverInfo = getRiverInfo(data);
+        const tempInfo = getTempInfo(data);
+
+        main.innerHTML = riverInfo;
+        if (temp) temp.innerHTML = tempInfo;
+    })
+    .catch(error => {
+        console.error('Error fetching river data:', error);
+        main.innerHTML = `<p class="lead text-danger">Error loading river conditions. Please try again later.</p>`;
+        if (temp) temp.innerHTML = `<p class="lead text-warning">Temperature data unavailable.</p>`;
+    });
 
     const getRiverInfo = (data) => {
-        const siteName = data['value']['timeSeries'][0]['sourceInfo']['siteName'].split(' ')
-            .map(w => w[0].toUpperCase() + w.substr(1).toLowerCase())
-            .join(' ');
-        const discharge = data['value']['timeSeries'][0]['values'][0]['value'][0]['value'];
-        const gage = data['value']['timeSeries'][1]['values'][0]['value'][0]['value'];
-        const dischargeInfo = getDischargeInfo(discharge);
-        const gageInfo = getGageInfo(gage);
+        try {
+            const timeSeries = data.value.timeSeries;
+            if (!timeSeries || timeSeries.length === 0) {
+                throw new Error('No time series data available');
+            }
 
-        const info = `
-        <h1 class="cover-heading">${siteName}</h1>
-        <br />
-        <p class="lead">${dischargeInfo} (Discharging at ${discharge} ft&sup3; per second)</p>
-        <p class="lead">${gageInfo} (Gage height of ${gage} ft)</p>
-      `;
-        return `${info}`;
-    };
+            const siteName = timeSeries[0].sourceInfo.siteName
+                .split(',')[0]
+                .split(' ')
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ');
 
-    const getTempInfo = (waterTempData) => {
-        let waterTemp = waterTempData['value']['timeSeries'][0]['values'][0]['value'][0]['value'];
-        if (waterTemp == -999999) {
-            return `<p class="lead">Water temperature unknown; site for water temperature undergoing maintenance</p>`;
+            let discharge = null;
+            let gageHeight = null;
+
+            timeSeries.forEach(series => {
+                const parameterCode = series.variable.variableCode[0].value;
+                const values = series.values[0]?.value;
+
+                if (!values || values.length === 0) return;
+
+                const value = parseFloat(values[0].value);
+                if (value === -999999) return;
+
+                switch (parameterCode) {
+                    case '00060': // Discharge (ft³/s)
+                        discharge = value;
+                        break;
+                    case '00065': // Gage height (ft)
+                        gageHeight = value;
+                        break;
+                }
+            });
+
+            if (discharge === null || gageHeight === null) {
+                throw new Error('Required river data not available');
+            }
+
+            const dischargeInfo = getDischargeInfo(discharge);
+            const gageInfo = getGageInfo(gageHeight);
+            const timestamp = timeSeries.find(s => s.variable.variableCode[0].value === '00060')
+                ?.values[0]?.value[0]?.dateTime;
+
+            return `
+                <h1 class="cover-heading">${siteName}</h1>
+                <br />
+                <p class="lead">${dischargeInfo} (Discharging at ${discharge} ft&sup3; per second)</p>
+                <p class="lead">${gageInfo} (Gage height of ${gageHeight} ft)</p>
+            `;
+        } catch (error) {
+            console.error('Error parsing river info:', error);
+            return `<p class="lead text-danger">Unable to parse river conditions data.</p>`;
         }
-        waterTemp = (waterTemp * 9 / 5) + 32;
-        waterTemp = Math.round(waterTemp * 10) / 10;
-        const waterTempInfo = getWaterTempInfo(waterTemp);
-        const info = `<p class="lead">${waterTempInfo} (${waterTemp}º F)</p>`;
-        return `${info}`;
     };
 
+    const getTempInfo = (data) => {
+        try {
+            const timeSeries = data.value.timeSeries;
+
+            // Find temperature data (parameter code 00010)
+            const tempSeries = timeSeries.find(series =>
+                series.variable.variableCode[0].value === '00010'
+            );
+
+            if (!tempSeries) {
+                return `<p class="lead text-muted">Water temperature data not available for this site.</p>`;
+            }
+
+            const values = tempSeries.values[0]?.value;
+            if (!values || values.length === 0) {
+                return `<p class="lead text-muted">No recent temperature readings available.</p>`;
+            }
+
+            let waterTempCelsius = parseFloat(values[0].value);
+
+            if (waterTempCelsius === -999999) {
+                return `<p class="lead text-warning">Water temperature unknown; site undergoing maintenance.</p>`;
+            }
+
+            // Convert Celsius to Fahrenheit
+            const waterTempF = Math.round(((waterTempCelsius * 9 / 5) + 32) * 10) / 10;
+            const waterTempInfo = getWaterTempInfo(waterTempF);
+
+            return `<p class="lead">${waterTempInfo} (${waterTempF}° F)</p>`;
+        } catch (error) {
+            console.error('Error parsing temperature info:', error);
+            return `<p class="lead text-warning">Unable to parse temperature data.</p>`;
+        }
+    };
+
+    // Water temperature interpretation (unchanged from your original)
     function getWaterTempInfo(waterTemp) {
-        let result = null;
-        if (waterTemp <= 32.0) {
-            result = 'The water is actually ice, so good luck with that.';
-        }
-        if (32.0 < waterTemp && waterTemp <= 45.0) {
-            result = 'The water temperature is freezing cold!';
-        }
-        if (45.0 < waterTemp && waterTemp <= 50.0) {
-            result = 'The water temperature is extremely cold!';
-        }
-        if (50.0 < waterTemp && waterTemp <= 55.0) {
-            result = 'The water temperature is very cold.';
-        }
-        if (55.0 < waterTemp && waterTemp <= 60.0) {
-            result = 'The water temperature is cold.';
-        }
-        if (60.0 < waterTemp && waterTemp <= 65.0) {
-            result = 'The water temperature is just a little bit cold.';
-        }
-        if (65.0 < waterTemp && waterTemp <= 70.0) {
-            result = 'The water temperature is pretty nice, just a touch chilly.';
-        }
-        if (70.0 < waterTemp && waterTemp <= 75.0) {
-            result = 'The water temperature is very nice.';
-        }
-        if (75.0 < waterTemp && waterTemp <= 80.0) {
-            result = 'The water temperature is super comfortable.';
-        }
-        if (80.0 < waterTemp && waterTemp <= 85.0) {
-            result = 'The water temperature is really warm.';
-        }
-        if (waterTemp > 85.0) {
-            result = 'The water temperature is almost like a hot tub!';
-        }
-        return result;
+        if (waterTemp <= 32.0) return 'The water is actually ice, so good luck with that.';
+        if (waterTemp <= 45.0) return 'The water temperature is freezing cold!';
+        if (waterTemp <= 50.0) return 'The water temperature is extremely cold!';
+        if (waterTemp <= 55.0) return 'The water temperature is very cold.';
+        if (waterTemp <= 60.0) return 'The water temperature is cold.';
+        if (waterTemp <= 65.0) return 'The water temperature is just a little bit cold.';
+        if (waterTemp <= 70.0) return 'The water temperature is pretty nice, just a touch chilly.';
+        if (waterTemp <= 75.0) return 'The water temperature is very nice.';
+        if (waterTemp <= 80.0) return 'The water temperature is super comfortable.';
+        if (waterTemp <= 85.0) return 'The water temperature is really warm.';
+        return 'The water temperature is almost like a hot tub!';
     }
 
+    // Discharge interpretation (unchanged from your original)
     function getDischargeInfo(discharge) {
-        let result = null;
-        if (discharge <= 50) {
-            result = 'The river is running super duper slow.';
-        }
-        if (50 < discharge && discharge <= 150) {
-            result = 'The river is running pretty slow today.';
-        }
-        if (150 < discharge && discharge <= 300) {
-            result = 'The river is running a little slow today.';
-        }
-        if (300 < discharge && discharge <= 800) {
-            result = 'The river is running great today.';
-        }
-        if (800 < discharge && discharge <= 1100) {
-            result = 'The river is running fast today.';
-        }
-        if (1100 < discharge && discharge <= 2000) {
-            result = 'The river is running very fast today.';
-        }
-        if (2000 < discharge && discharge <= 4000) {
-            result = 'The river is running extremely fast today. Be careful.';
-        }
-        if (discharge > 4000) {
-            result = 'The river is probably running too fast to kayak today.';
-        }
-        return result;
+        if (discharge <= 50) return 'The river is running super duper slow.';
+        if (discharge <= 150) return 'The river is running pretty slow today.';
+        if (discharge <= 300) return 'The river is running a little slow today.';
+        if (discharge <= 800) return 'The river is running great today.';
+        if (discharge <= 1100) return 'The river is running fast today.';
+        if (discharge <= 2000) return 'The river is running very fast today.';
+        if (discharge <= 4000) return 'The river is running extremely fast today. Be careful.';
+        return 'The river is probably running too fast to kayak today.';
     }
 
+    // Gage height interpretation (unchanged from your original)
     function getGageInfo(gage) {
-        let result = null;
-        if (gage <= 0.5) {
-            result = 'It\'s bone dry and not possible to kayak.';
-        }
-        if (0.5 < gage && gage <= 1.5) {
-            result = 'You\'ll have to portage a lot.';
-        }
-        if (1.5 < gage && gage <= 1.9) {
-            result = 'You\'ll probaby have to portage some.';
-        }
-        if (1.9 < gage && gage <= 2.3) {
-            result = 'The water level is a little lower than average.';
-        }
-        if (2.3 < gage && gage <= 2.8) {
-            result = 'The water level is right around the average.';
-        }
-        if (2.8 < gage && gage <= 3.5) {
-            result = 'The water level is great, you should be fine.';
-        }
-        if (3.5 < gage && gage <= 4.0) {
-            result = 'The water level is a little high.';
-        }
-        if (4.0 < gage && gage <= 4.5) {
-            result = 'Be careful, the water is higher than normal.';
-        }
-        if (4.5 < gage && gage <= 5.0) {
-            result = 'Water is very high. Might be risky.';
-        }
-        if (5.0 < gage && gage <= 6.0) {
-            result = 'Probably not a good idea to kayak today.';
-        }
-        if (gage > 6.0) {
-            result = 'The water is too damn high!';
-        }
-        return result;
+        if (gage <= 0.5) return 'It\'s bone dry and not possible to kayak.';
+        if (gage <= 1.5) return 'You\'ll have to portage a lot.';
+        if (gage <= 1.9) return 'You\'ll probably have to portage some.';
+        if (gage <= 2.3) return 'The water level is a little lower than average.';
+        if (gage <= 2.8) return 'The water level is right around the average.';
+        if (gage <= 3.5) return 'The water level is great, you should be fine.';
+        if (gage <= 4.0) return 'The water level is a little high.';
+        if (gage <= 4.5) return 'Be careful, the water is higher than normal.';
+        if (gage <= 5.0) return 'Water is very high. Might be risky.';
+        if (gage <= 6.0) return 'Probably not a good idea to kayak today.';
+        return 'The water is too damn high!';
     }
 });
