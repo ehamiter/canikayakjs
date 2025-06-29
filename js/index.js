@@ -11,15 +11,9 @@ document.addEventListener('DOMContentLoaded', (event) => {
     main.innerHTML = `<p>${spinnerText} Fetching real-time data from waterservices.usgs.gov...</p>`;
     if (temp) temp.innerHTML = `<p>${spinnerText} Loading temperature data...</p>`;
 
-    const url = 'https://waterservices.usgs.gov/nwis/iv/?format=json&site=03433500&siteStatus=all';
+    const url = 'https://waterservices.usgs.gov/nwis/iv/?format=json&sites=03433500&siteStatus=all';
 
-    fetch(url, {
-        headers: {
-            'Accept-Encoding': 'gzip, deflate',
-            'Accept': 'application/json',
-            'User-Agent': 'CanIKayak-Web/1.0'
-        }
-    })
+    fetch(url)
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
