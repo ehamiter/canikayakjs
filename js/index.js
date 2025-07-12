@@ -139,26 +139,26 @@ document.addEventListener('DOMContentLoaded', (event) => {
         return 'The water temperature is almost like a hot tub!';
     }
 
-    // Discharge interpretation (unchanged from your original)
+    // Discharge interpretation
     function getDischargeInfo(discharge) {
         if (discharge <= 50) return 'The river is running super duper slow.';
         if (discharge <= 150) return 'The river is running pretty slow today.';
         if (discharge <= 300) return 'The river is running a little slow today.';
-        if (discharge <= 800) return 'The river is running great today.';
+        if (discharge <= 800) return 'The river is running a little fast today.';
         if (discharge <= 1100) return 'The river is running fast today.';
         if (discharge <= 2000) return 'The river is running very fast today.';
-        if (discharge <= 4000) return 'The river is running extremely fast today. Be careful.';
+        if (discharge <= 4000) return 'The river is running extremely fast today. Use caution.';
         return 'The river is probably running too fast to kayak today.';
     }
 
-    // Gage height interpretation (unchanged from your original)
+    // Gage height interpretation
     function getGageInfo(gage) {
         if (gage <= 0.5) return 'It\'s bone dry and not possible to kayak.';
         if (gage <= 1.5) return 'You\'ll have to portage a lot.';
         if (gage <= 1.9) return 'You\'ll probably have to portage some.';
         if (gage <= 2.3) return 'The water level is a little lower than average.';
         if (gage <= 2.8) return 'The water level is right around the average.';
-        if (gage <= 3.5) return 'The water level is great, you should be fine.';
+        if (gage <= 3.5) return 'The water level is slightly higher than average.';
         if (gage <= 4.0) return 'The water level is a little high.';
         if (gage <= 4.5) return 'Be careful, the water is higher than normal.';
         if (gage <= 5.0) return 'Water is very high. Might be risky.';
