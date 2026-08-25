@@ -4,25 +4,34 @@ document.addEventListener('DOMContentLoaded', (event) => {
 
     const spinnerText = `
         <div class="spinner-border spinner-border-sm mr-1 text-light" role="status">
-            <span class="sr-only">Fetching data from waterservices.usgs.gov...</span>
+            <span class="sr-only">Fetching data from api.waterdata.usgs.gov...</span>
         </div>
     `;
 
-    main.innerHTML = `<p>${spinnerText} Fetching real-time data from waterservices.usgs.gov...</p>`;
+    main.innerHTML = `<p>${spinnerText} Fetching real-time data from api.waterdata.usgs.gov...</p>`;
     if (temp) temp.innerHTML = `<p>${spinnerText} Loading temperature data...</p>`;
 
-    const url = 'https://waterservices.usgs.gov/nwis/iv/?format=json&sites=03433500&siteStatus=all';
+    const siteId = 'USGS-03433500';
+    const parameterCodes = ['00060', '00065', '00010']; // Discharge, gage height, temperature
+    const apiBase = 'https://api.waterdata.usgs.gov/ogcapi/v0/collections';
 
-    fetch(url)
-    .then(response => {
+    const valuesUrl = `${apiBase}/latest-continuous/items?f=json&monitoring_location_id=${siteId}&parameter_code=${parameterCodes.join(',')}`;
+    const locationUrl = `${apiBase}/monitoring-locations/items/${siteId}?f=json&properties=monitoring_location_name`;
+
+    const checkResponse = (response) => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.json();
-    })
-    .then(data => {
-        const riverInfo = getRiverInfo(data);
-        const tempInfo = getTempInfo(data);
+    };
+
+    Promise.all([
+        fetch(valuesUrl).then(checkResponse),
+        fetch(locationUrl).then(checkResponse),
+    ])
+    .then(([valuesData, locationData]) => {
+        const riverInfo = getRiverInfo(valuesData, locationData);
+        const tempInfo = getTempInfo(valuesData);
 
         main.innerHTML = riverInfo;
         if (temp) temp.innerHTML = tempInfo;
@@ -33,14 +42,14 @@ document.addEventListener('DOMContentLoaded', (event) => {
         if (temp) temp.innerHTML = `<p class="lead text-warning">Temperature data unavailable.</p>`;
     });
 
-    const getRiverInfo = (data) => {
+    const getRiverInfo = (valuesData, locationData) => {
         try {
-            const timeSeries = data.value.timeSeries;
-            if (!timeSeries || timeSeries.length === 0) {
+            const features = valuesData.features;
+            if (!features || features.length === 0) {
                 throw new Error('No time series data available');
             }
 
-            const siteName = timeSeries[0].sourceInfo.siteName
+            const siteName = (locationData?.properties?.monitoring_location_name || '')
                 .split(',')[0]
                 .split(' ')
                 .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -49,16 +58,16 @@ document.addEventListener('DOMContentLoaded', (event) => {
             let discharge = null;
             let gageHeight = null;
 
-            timeSeries.forEach(series => {
-                const parameterCode = series.variable.variableCode[0].value;
-                const values = series.values[0]?.value;
+            features.forEach(feature => {
+                const props = feature.properties;
+                const rawValue = props.value;
 
-                if (!values || values.length === 0) return;
+                if (rawValue === null || rawValue === undefined) return;
 
-                const value = parseFloat(values[0].value);
-                if (value === -999999) return;
+                const value = parseFloat(rawValue);
+                if (Number.isNaN(value) || value === -999999) return;
 
-                switch (parameterCode) {
+                switch (props.parameter_code) {
                     case '00060': // Discharge (ft³/s)
                         discharge = value;
                         break;
@@ -74,8 +83,6 @@ document.addEventListener('DOMContentLoaded', (event) => {
 
             const dischargeInfo = getDischargeInfo(discharge);
             const gageInfo = getGageInfo(gageHeight);
-            const timestamp = timeSeries.find(s => s.variable.variableCode[0].value === '00060')
-                ?.values[0]?.value[0]?.dateTime;
 
             return `
                 <h1 class="cover-heading">${siteName}</h1>
@@ -89,27 +96,27 @@ document.addEventListener('DOMContentLoaded', (event) => {
         }
     };
 
-    const getTempInfo = (data) => {
+    const getTempInfo = (valuesData) => {
         try {
-            const timeSeries = data.value.timeSeries;
+            const features = valuesData.features;
 
             // Find temperature data (parameter code 00010)
-            const tempSeries = timeSeries.find(series =>
-                series.variable.variableCode[0].value === '00010'
+            const tempFeature = features.find(feature =>
+                feature.properties.parameter_code === '00010'
             );
 
-            if (!tempSeries) {
+            if (!tempFeature) {
                 return `<p class="lead text-muted">Water temperature data not available for this site.</p>`;
             }
 
-            const values = tempSeries.values[0]?.value;
-            if (!values || values.length === 0) {
+            const rawValue = tempFeature.properties.value;
+            if (rawValue === null || rawValue === undefined) {
                 return `<p class="lead text-muted">No recent temperature readings available.</p>`;
             }
 
-            let waterTempCelsius = parseFloat(values[0].value);
+            let waterTempCelsius = parseFloat(rawValue);
 
-            if (waterTempCelsius === -999999) {
+            if (Number.isNaN(waterTempCelsius) || waterTempCelsius === -999999) {
                 return `<p class="lead text-warning">Water temperature unknown; site undergoing maintenance.</p>`;
             }
 
